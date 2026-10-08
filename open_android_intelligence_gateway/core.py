@@ -427,12 +427,14 @@ def _contract_root(explicit: str | Path | None = None) -> Path:
     if configured:
         given = Path(configured).expanduser()
         candidates.extend([given, given / CONTRACT_DIRECTORY_NAME])
-    # Finally this package own directory tree, which is where the pinned
-    # checkout puts the contract. The working directory is deliberately not
-    # searched: it made an application checkout look like a ready contract
-    # without ever being checked against this plugin pin.
-    source = Path(__file__).resolve()
-    candidates.extend(parent / CONTRACT_DIRECTORY_NAME for parent in source.parents)
+    # Finally the plugin directory itself - the exact place the pinned
+    # checkout puts the contract. Neither the working directory nor the
+    # directories above this package are searched: CI checks the plugin out
+    # inside the application repository, and an upward search there would
+    # happily serve the application copy, which was never checked against
+    # this plugin pin.
+    plugin_root = Path(__file__).resolve().parent.parent
+    candidates.append(plugin_root / CONTRACT_DIRECTORY_NAME)
     for candidate in candidates:
         if (candidate / "schemas" / "envelope.schema.json").is_file() and (candidate / "vectors" / "vector-set-1.0.0.schema.json").is_file():
             return candidate

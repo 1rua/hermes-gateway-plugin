@@ -70,6 +70,21 @@ def isolated_plugin_directory():
             shutil.move(str(backup), str(local))
 
 
+def test_the_plugin_directory_is_the_only_implicit_source(
+    monkeypatch, isolated_plugin_directory,
+):
+    """Without the contract in place, nothing else may stand in for it.
+
+    This is the shape CI runs: the plugin is checked out inside the application
+    repository, so an upward search finds the application contract one level
+    above and quietly serves a copy this pin never vouched for.
+    """
+    monkeypatch.delenv(CONTRACT_ROOT_ENV, raising=False)
+
+    with pytest.raises(GatewayError):
+        _contract_root()
+
+
 def test_working_directory_is_not_a_contract_source(tmp_path, monkeypatch, isolated_plugin_directory):
     """The working directory must never become a contract source.
 
