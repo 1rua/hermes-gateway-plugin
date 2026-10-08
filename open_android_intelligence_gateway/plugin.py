@@ -541,8 +541,12 @@ def register(ctx: Any) -> None:
                     print("❌ 错误：请指定 contract 的子命令，例如："
                           "hermes open-android-intelligence contract status")
                     return
-                resolution = resolve_contract_root(
-                    plugin_root(), force=contract_action == "sync",
+                # status inspects; only sync is allowed to fetch. Keeping them
+                # on separate paths is what makes the report trustworthy.
+                resolution = (
+                    resolve_contract_root(plugin_root(), force=True)
+                    if contract_action == "sync"
+                    else materialised_contract_root(plugin_root())
                 )
                 if resolution.root is None:
                     print(f"❌ 协议契约未就绪：{resolution.reason}")

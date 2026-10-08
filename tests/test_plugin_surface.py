@@ -132,6 +132,33 @@ def test_contract_status_states_why_the_contract_is_not_ready(tmp_path, monkeypa
     assert str(plugin_root / "contract-pin.json") in report
 
 
+def test_contract_status_does_not_repair_a_missing_contract(tmp_path, monkeypatch, capsys):
+    """``status`` is a diagnostic, not a repair.
+
+    It shares the plugin read-only inspection path on purpose: a status report
+    that quietly fetched twenty seconds of repository would both lie about what
+    it observed and make an offline operator diagnosis hang.
+    """
+    revision = _local_contract_source(tmp_path)
+    plugin_root = tmp_path / "plugin"
+    plugin_root.mkdir()
+    (plugin_root / "contract-pin.json").write_text(
+        json.dumps(
+            {"repository": str(tmp_path / "contract-source"), "revision": revision},
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv(CONTRACT_ROOT_ENV, raising=False)
+    monkeypatch.setattr(plugin_module, "plugin_root", lambda: plugin_root)
+    ctx = CliHostContext(tmp_path / "data")
+    plugin_module.register(ctx)
+
+    report = _run_contract_cli(ctx, capsys, "contract", "status")
+
+    assert "未就绪" in report
+    assert not (plugin_root / "gateway-contract").exists()
+
+
 def _local_contract_source(root: Path) -> str:
     """A real local git repository holding the contract; returns its commit."""
     source = root / "contract-source"
