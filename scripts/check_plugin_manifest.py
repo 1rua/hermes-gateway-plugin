@@ -21,6 +21,17 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_FIELDS = ("name", "version", "description", "kind")
 
 
+def _missing_runtime_dependencies() -> list[str]:
+    """The modules the Gateway cannot run without, per its own import guards."""
+    import importlib.util
+
+    required = {
+        "jsonschema": "json/schema validation",
+        "cryptography": "Ed25519 request signature verification",
+    }
+    return [name for name in required if importlib.util.find_spec(name) is None]
+
+
 def main() -> int:
     manifest = yaml.safe_load((PLUGIN_ROOT / "plugin.yaml").read_text(encoding="utf-8"))
     missing = [field for field in REQUIRED_FIELDS if not manifest.get(field)]
@@ -42,6 +53,15 @@ def main() -> int:
         verify_manifest_protocol(HERMES_PLUGIN_MANIFEST)
     except Exception as exc:
         print("protocol declaration rejected: " + str(exc))
+        return 1
+
+    # A dependency that goes undeclared installs cleanly and then rejects every
+    # authenticated request, so the runtime requirements are checked here rather
+    # than discovered from a 401 on a phone.
+    missing = _missing_runtime_dependencies()
+    if missing:
+        print("缺少运行时依赖: " + ", ".join(missing))
+        print("请执行: pip install -e .")
         return 1
 
     pin = json.loads((PLUGIN_ROOT / "contract-pin.json").read_text(encoding="utf-8"))

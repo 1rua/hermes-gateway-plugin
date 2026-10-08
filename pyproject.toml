@@ -9,7 +9,13 @@ description = "Native Python Gateway Protocol v2 plugin for Hermes"
 # Hermes Agent v0.20+ ships a 3.11 interpreter; declaring a higher floor
 # would claim a runtime the plugin is not actually tested on.
 requires-python = ">=3.11"
-dependencies = ["jsonschema>=4.23,<5"]
+# cryptography is not optional: Ed25519 request signatures are verified with it,
+# and without it the Gateway rejects every authenticated request with 401 while
+# still looking installed and healthy.
+dependencies = [
+    "jsonschema>=4.23,<5",
+    "cryptography>=42",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
