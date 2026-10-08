@@ -34,6 +34,7 @@ def _without_operator_override(monkeypatch):
     monkeypatch.delenv(CONTRACT_ROOT_ENV, raising=False)
 
 PROBE_FILES = (
+    "core-dispatched-schemas.json",
     "schemas/envelope.schema.json",
     "vectors/vector-set-1.0.0.schema.json",
 )

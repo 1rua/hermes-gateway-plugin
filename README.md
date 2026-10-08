@@ -59,6 +59,10 @@ hermes open-android-intelligence contract status
 hermes open-android-intelligence contract sync
 ```
 
+契约的完整性以 `core-dispatched-schemas.json`、`schemas/envelope.schema.json` 与
+`vectors/vector-set-1.0.0.schema.json` 三者为准：缺任何一个都会被判定为未就绪，而不会让
+网关在协商时才暴露问题。
+
 `status` 会如实报告契约来源（`pin` / `cached` / `env`）、锁定提交与目录；未就绪时
 给出可操作的中文原因，不会静默降级。
 

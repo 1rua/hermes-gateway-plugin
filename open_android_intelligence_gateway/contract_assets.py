@@ -43,6 +43,7 @@ CONTRACT_REPOSITORY_ENV = "OPEN_ANDROID_GATEWAY_CONTRACT_REPOSITORY"
 # Mirrors the core's own readiness probe: both the schema and the vector set
 # must be present, because the negotiated digest covers both.
 DEFAULT_PROBES: tuple[str, ...] = (
+    "core-dispatched-schemas.json",
     "schemas/envelope.schema.json",
     "vectors/vector-set-1.0.0.schema.json",
 )

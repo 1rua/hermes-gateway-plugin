@@ -16,6 +16,7 @@ from open_android_intelligence_gateway.contract_assets import CONTRACT_ROOT_ENV
 from open_android_intelligence_gateway.core import _contract_root
 
 PROBE_FILES = (
+    "core-dispatched-schemas.json",
     "schemas/envelope.schema.json",
     "vectors/vector-set-1.0.0.schema.json",
 )
