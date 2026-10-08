@@ -7,6 +7,7 @@ observed as an operator would observe them rather than through a stubbed git.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -17,6 +18,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from open_android_intelligence_gateway.contract_assets import (
+    CONTRACT_REPOSITORY_ENV,
     CONTRACT_ROOT_ENV,
     materialised_contract_root,
     resolve_contract_root,
@@ -157,6 +159,26 @@ def test_inspection_honours_the_operator_override_without_network(tmp_path, monk
     monkeypatch.setenv(CONTRACT_ROOT_ENV, str(supplied))
 
     assert materialised_contract_root(tmp_path / "plugin").root == supplied
+
+
+def test_a_mirror_may_serve_the_pinned_revision_from_elsewhere(tmp_path, monkeypatch):
+    """An internal mirror changes where the commit comes from, not which one.
+
+    The revision stays whatever the pin declared, so a deployment behind a
+    mirror gets the identical contract without being able to substitute a
+    different one.
+    """
+    source, revision = _contract_source(tmp_path)
+    mirror = tmp_path / "mirror"
+    shutil.copytree(source, mirror)
+    plugin_root = tmp_path / "plugin"
+    _write_pin(plugin_root, mirror, revision)
+    monkeypatch.setenv(CONTRACT_REPOSITORY_ENV, str(source))
+
+    resolution = resolve_contract_root(plugin_root)
+
+    assert resolution.root == plugin_root / "gateway-contract"
+    assert resolution.pinned_ref == revision
 
 
 def test_reuses_an_already_materialised_contract(tmp_path):

@@ -13,7 +13,10 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # The interpreter Hermes Agent ships, so a syntax or dependency
+          # change that only works on a newer Python fails here rather than
+          # inside a user host.
+          python-version: "3.11"
 
       - name: Resolve the pinned contract revision
         id: pin

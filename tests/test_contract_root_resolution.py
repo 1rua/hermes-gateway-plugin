@@ -10,10 +10,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from open_android_intelligence_gateway.contract_assets import CONTRACT_ROOT_ENV
-from open_android_intelligence_gateway.core import _contract_root
+from open_android_intelligence_gateway.core import GatewayError, _contract_root
 
 PROBE_FILES = (
     "core-dispatched-schemas.json",
@@ -43,6 +45,47 @@ def test_configured_directory_is_used_when_no_contract_is_above(tmp_path, monkey
     monkeypatch.chdir(empty_cwd)
 
     assert _contract_root() == contract
+
+
+@pytest.fixture
+def isolated_plugin_directory():
+    """Hide any contract already materialised in this checkout.
+
+    Without this, a developer who ran the plugin locally has a real contract
+    one level above the package, and the upward search legitimately finds it
+    before reaching anything the test set up.
+    """
+    import shutil
+
+    local = Path(__file__).resolve().parents[1] / "gateway-contract"
+    backup = local.with_name("gateway-contract._hidden_by_test")
+    moved = False
+    if local.is_dir():
+        shutil.move(str(local), str(backup))
+        moved = True
+    try:
+        yield
+    finally:
+        if moved and not local.exists():
+            shutil.move(str(backup), str(local))
+
+
+def test_working_directory_is_not_a_contract_source(tmp_path, monkeypatch, isolated_plugin_directory):
+    """The working directory must never become a contract source.
+
+    Searching upwards from the CWD let an application checkout satisfy the
+    Gateway with a contract that was never checked against this plugin pin:
+    ``contract status`` would report "not ready" while the Gateway served one
+    anyway. Every remaining source is explicit and checkable - an argument,
+    the environment, or this checkout own materialised copy.
+    """
+    application = tmp_path / "app"
+    _contract_at(application / "gateway-contract")
+    monkeypatch.delenv(CONTRACT_ROOT_ENV, raising=False)
+    monkeypatch.chdir(application)
+
+    with pytest.raises(GatewayError):
+        _contract_root()
 
 
 def test_explicit_argument_outranks_the_operator_override(tmp_path, monkeypatch):

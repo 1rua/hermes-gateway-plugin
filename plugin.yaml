@@ -10,7 +10,9 @@ author: Open Android Intelligence
 kind: platform
 license: MIT
 homepage: https://github.com/1rua/hermes-gateway-plugin
-python_runtime: ">=3.12"
+# Matches the interpreter Hermes Agent actually ships (3.11); a higher
+# floor here would gate installs on a runtime this plugin never sees.
+python_runtime: ">=3.11"
 requires_hermes: ">=0.20.0"
 # Registered by device_tools.register_device_tools: the typed device-request
 # tool, and the hook that acknowledges adopted messages after a tool call.

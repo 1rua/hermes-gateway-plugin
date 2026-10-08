@@ -209,11 +209,11 @@ def _failure_reason(pin: Mapping[str, Any], exc: BaseException) -> str:
     )
 
 
-def _resolve_from_environment() -> ContractResolution | None:
-    """Honour an operator-supplied contract root before touching the network.
+def _configured_contract_root() -> ContractResolution | None:
+    """The operator-supplied contract root, or None when it is not configured.
 
-    The pin file is not consulted here on purpose: an offline bundle is a
-    legitimate deployment that never carries one.
+    An offline bundle is a legitimate deployment that carries no pin file at
+    all, so this is consulted before the pin is read.
     """
     supplied = os.environ.get(CONTRACT_ROOT_ENV, "").strip()
     if not supplied:
@@ -221,11 +221,12 @@ def _resolve_from_environment() -> ContractResolution | None:
     root = Path(supplied).expanduser()
     if _is_ready(root, DEFAULT_PROBES):
         return ContractResolution(root=root, pinned_ref=None, source="env", reason=None)
+    listed = " 与 ".join(DEFAULT_PROBES)
     return ContractResolution(
         root=None, pinned_ref=None, source="unavailable",
         reason=(
             f"{CONTRACT_ROOT_ENV} 指向的目录不是可用的契约根：{root}；"
-            f"需要其中同时存在 {' 与 '.join(DEFAULT_PROBES)}。"
+            f"需要其中同时存在 {listed}。"
         ),
     )
 
@@ -240,18 +241,9 @@ def materialised_contract_root(plugin_root: Path) -> ContractResolution:
     answers only "is it already here?" so a missing contract can be stated
     rather than silently tolerated.
     """
-    supplied = os.environ.get(CONTRACT_ROOT_ENV, "").strip()
-    if supplied:
-        root = Path(supplied).expanduser()
-        if _is_ready(root, DEFAULT_PROBES):
-            return ContractResolution(root=root, pinned_ref=None, source="env", reason=None)
-        return ContractResolution(
-            root=None, pinned_ref=None, source="unavailable",
-            reason=(
-                f"{CONTRACT_ROOT_ENV} 指向的目录不是可用的契约根：{root}；"
-                f"需要其中同时存在 {' 与 '.join(DEFAULT_PROBES)}。"
-            ),
-        )
+    configured = _configured_contract_root()
+    if configured is not None:
+        return configured
 
     try:
         pin = _read_pin(plugin_root)
@@ -273,9 +265,9 @@ def materialised_contract_root(plugin_root: Path) -> ContractResolution:
 
 
 def resolve_contract_root(plugin_root: Path, *, force: bool = False) -> ContractResolution:
-    from_environment = _resolve_from_environment()
-    if from_environment is not None:
-        return from_environment
+    configured = _configured_contract_root()
+    if configured is not None:
+        return configured
 
     pin_error: PinError | None = None
     try:
