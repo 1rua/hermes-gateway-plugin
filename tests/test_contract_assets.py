@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from open_android_intelligence_gateway.contract_assets import (
     CONTRACT_ROOT_ENV,
+    materialised_contract_root,
     resolve_contract_root,
 )
 
@@ -115,6 +116,46 @@ def test_clones_the_pinned_contract_revision_into_the_plugin_directory(tmp_path)
     assert resolution.root == plugin_root / "gateway-contract"
     for probe in PROBE_FILES:
         assert (resolution.root / probe).is_file()
+
+
+def test_inspection_never_contacts_the_network(tmp_path):
+    """Loading the plugin must not block on a clone.
+
+    A cold fetch of the pinned application repository takes tens of seconds.
+    Plugin loading runs inside the host's startup, so an inspection that
+    reached the network would make the host look hung — and would fail on any
+    offline machine. Acquisition is therefore a separate, explicit step.
+    """
+    missing = tmp_path / "missing-repository"
+    plugin_root = tmp_path / "plugin"
+    _write_pin(plugin_root, missing, "1" * 40)
+
+    resolution = materialised_contract_root(plugin_root)
+
+    assert resolution.source == "unavailable"
+    assert resolution.root is None
+    assert "contract sync" in resolution.reason
+    assert str(plugin_root / PIN_FILE_NAME) in resolution.reason
+
+
+def test_inspection_reports_a_materialised_contract(tmp_path):
+    source, revision = _contract_source(tmp_path)
+    plugin_root = tmp_path / "plugin"
+    _write_pin(plugin_root, source, revision)
+    resolve_contract_root(plugin_root)
+
+    assert materialised_contract_root(plugin_root).root == plugin_root / "gateway-contract"
+
+
+def test_inspection_honours_the_operator_override_without_network(tmp_path, monkeypatch):
+    supplied = tmp_path / "offline-contract"
+    for probe in PROBE_FILES:
+        target = supplied / probe
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('{"type": "object"}\n', encoding="utf-8")
+    monkeypatch.setenv(CONTRACT_ROOT_ENV, str(supplied))
+
+    assert materialised_contract_root(tmp_path / "plugin").root == supplied
 
 
 def test_reuses_an_already_materialised_contract(tmp_path):

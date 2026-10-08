@@ -17,22 +17,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from open_android_intelligence_gateway.adapter import AccountPasswordVerifier, create_gateway_request_verifier
 from open_android_intelligence_gateway.admin import HostApiCompatibility, create_admin_service
+from open_android_intelligence_gateway.contract_assets import resolve_contract_root
 from open_android_intelligence_gateway.core import create_gateway_core
 from open_android_intelligence_gateway.http import create_gateway_exposure
 from open_android_intelligence_gateway.local_keys import LocalMasterKeyStore
 from test_support import make_secret_store
 
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+
+
+def contract_root(explicit):
+    """The contract this fixture serves, or a stated reason it cannot start."""
+    if explicit:
+        root = Path(explicit).expanduser()
+        if not root.is_dir():
+            raise SystemExit(f"--contract-root 指向的目录不存在: {root}")
+        return root
+    resolution = resolve_contract_root(PLUGIN_ROOT)
+    if resolution.root is None:
+        raise SystemExit(f"协议契约未就绪，无法启动 fixture：{resolution.reason}")
+    return resolution.root
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument(
+        "--contract-root", default=None,
+        help="Explicit Gateway Protocol contract directory; defaults to the pinned fetch.",
+    )
     args = parser.parse_args()
     storage = Path(mkdtemp(prefix="oai-android-interop-"))
     # Exercise the deployed key source when the operator configures one; the
     # in-process test double stays for the plain unit runs.
     key_file = os.environ.get("OAI_GATEWAY_MASTER_KEY_FILE")
     secret_store = LocalMasterKeyStore(key_file) if key_file else make_secret_store()
-    core = create_gateway_core(storage, secret_store=secret_store)
+    core = create_gateway_core(storage, secret_store=secret_store, contract_root=contract_root(args.contract_root))
     core.credential_verifier = AccountPasswordVerifier(core)
     compatibility = HostApiCompatibility("1.0.0", "1.0.0", "0123456789abcdef0123456789abcdef01234567")
     admin = create_admin_service(core=core, host_version="1.0.0", host_api=compatibility)

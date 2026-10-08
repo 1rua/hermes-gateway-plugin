@@ -24,10 +24,16 @@ from .adapter import (
     create_gateway_request_verifier,
 )
 from .account_paths import GATEWAY_DIRECTORY_NAME, WIRE_ID_PATTERN
-from .contract_assets import resolve_contract_root
+from .contract_assets import materialised_contract_root, resolve_contract_root
 from .core import PROTOCOL_VERSION, WIRE_PROTOCOL, GatewayCore, create_gateway_core
 from .http import EXPOSURE_MODES, GatewayExposure, create_gateway_exposure
 from .local_keys import resolve_local_master_key_store
+
+
+# Surfaced by the host whenever the platform needs attention, so an
+# operator who installed the plugin is told how to make it ready instead of
+# being left with a gateway that quietly refuses every negotiation.
+CONTRACT_SETUP_HINT = "协议契约未获取：请执行 hermes open-android-intelligence contract sync"
 
 
 HERMES_PLUGIN_MANIFEST = {
@@ -189,13 +195,15 @@ def plugin_root() -> Path:
 
 
 def _resolve_contract_root() -> Path | None:
-    """Materialise the pinned contract for this checkout, or state why not.
+    """Return the contract already present in this checkout, or state why not.
 
-    A missing contract is not allowed to abort plugin loading: the host stays
+    Deliberately inspection-only: loading happens inside the host startup and a
+    cold fetch of the pinned repository would block it for tens of seconds. A
+    missing contract is not allowed to abort loading either - the host stays
     startable and the operator gets a stated reason, while the Gateway itself
     refuses to serve because the core cannot compute the negotiated digest.
     """
-    resolution = resolve_contract_root(plugin_root())
+    resolution = materialised_contract_root(plugin_root())
     if resolution.root is None:
         print(f"[open_android] 协议契约未就绪：{resolution.reason}")
         return None
@@ -443,7 +451,7 @@ def register(ctx: Any) -> None:
                     is_connected=_is_connected,
                     validate_config=_is_connected,
                     setup_fn=_setup_fn,
-                    install_hint="",
+                    install_hint=CONTRACT_SETUP_HINT,
                     emoji="📱",
                 )
                 register_plat(
@@ -454,7 +462,7 @@ def register(ctx: Any) -> None:
                     is_connected=_is_connected,
                     validate_config=_is_connected,
                     setup_fn=_setup_fn,
-                    install_hint="",
+                    install_hint=CONTRACT_SETUP_HINT,
                     emoji="📱",
                 )
         except Exception:

@@ -164,6 +164,8 @@ def test_contract_sync_repairs_a_damaged_contract_tree(tmp_path, monkeypatch, ca
     monkeypatch.setattr(plugin_module, "plugin_root", lambda: plugin_root)
     ctx = CliHostContext(tmp_path / "data")
     plugin_module.register(ctx)
+    # Loading never reaches the network, so the first acquisition is explicit.
+    _run_contract_cli(ctx, capsys, "contract", "sync")
     (plugin_root / "gateway-contract" / PROBE_FILES[0]).unlink()
 
     report = _run_contract_cli(ctx, capsys, "contract", "sync")

@@ -229,6 +229,48 @@ def _resolve_from_environment() -> ContractResolution | None:
     )
 
 
+def materialised_contract_root(plugin_root: Path) -> ContractResolution:
+    """Report the contract already on disk, without contacting any network.
+
+    Plugin loading happens inside the host's startup, and a cold fetch of the
+    pinned application repository takes tens of seconds; inspecting it there
+    would make a healthy host look hung and would fail outright offline.
+    Acquisition is therefore a separate, explicit step, and this function
+    answers only "is it already here?" so a missing contract can be stated
+    rather than silently tolerated.
+    """
+    supplied = os.environ.get(CONTRACT_ROOT_ENV, "").strip()
+    if supplied:
+        root = Path(supplied).expanduser()
+        if _is_ready(root, DEFAULT_PROBES):
+            return ContractResolution(root=root, pinned_ref=None, source="env", reason=None)
+        return ContractResolution(
+            root=None, pinned_ref=None, source="unavailable",
+            reason=(
+                f"{CONTRACT_ROOT_ENV} 指向的目录不是可用的契约根：{root}；"
+                f"需要其中同时存在 {' 与 '.join(DEFAULT_PROBES)}。"
+            ),
+        )
+
+    try:
+        pin = _read_pin(plugin_root)
+    except PinError as exc:
+        return ContractResolution(root=None, pinned_ref=None, source="unavailable", reason=str(exc))
+
+    root = plugin_root / CONTRACT_DIRECTORY_NAME
+    if _is_ready(root, pin["probes"]) and _materialised_revision(root) == pin["revision"]:
+        return ContractResolution(root=root, pinned_ref=pin["revision"], source="cached", reason=None)
+    return ContractResolution(
+        root=None, pinned_ref=pin["revision"], source="unavailable",
+        reason=(
+            f"协议契约尚未获取：{plugin_root / PIN_FILE_NAME} 锁定了"
+            f" {pin['repository']} 的提交 {pin['revision']}，但本地还没有该目录。"
+            f"请执行 `hermes open-android-intelligence contract sync` 获取，"
+            f"或用环境变量 {CONTRACT_ROOT_ENV} 指向已就位的契约目录。"
+        ),
+    )
+
+
 def resolve_contract_root(plugin_root: Path, *, force: bool = False) -> ContractResolution:
     from_environment = _resolve_from_environment()
     if from_environment is not None:
