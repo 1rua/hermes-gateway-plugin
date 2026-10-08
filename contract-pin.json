@@ -2,6 +2,7 @@
   "repository": "https://github.com/1rua/open-android-intelligence.git",
   "revision": "95f2e1702a6e360b6779c6c69667d36a0e96d683",
   "probes": [
+    "core-dispatched-schemas.json",
     "schemas/envelope.schema.json",
     "vectors/vector-set-1.0.0.schema.json"
   ]
