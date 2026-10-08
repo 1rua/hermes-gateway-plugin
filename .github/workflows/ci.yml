@@ -1,0 +1,45 @@
+name: plugin-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve the pinned contract revision
+        id: pin
+        run: |
+          revision=$(python -c "import json;print(json.load(open(\"contract-pin.json\"))[\"revision\"])")
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned Gateway Protocol contract
+        uses: actions/checkout@v4
+        with:
+          repository: 1rua/open-android-intelligence
+          ref: ${{ steps.pin.outputs.revision }}
+          path: .contract-source
+          sparse-checkout: gateway-contract
+
+      - name: Install dependencies
+        run: python -m pip install pytest jsonschema aiohttp cryptography
+
+      # The negotiation tests compare the real shipped Schema digest, so the
+      # suite runs against the contract this plugin actually pins.
+      - name: Run tests
+        run: python -m pytest tests
+        env:
+          OPEN_ANDROID_GATEWAY_CONTRACT_ROOT: ${{ github.workspace }}/.contract-source/gateway-contract
+
+      - name: Check the manifest, the entry point and the protocol agreement
+        run: |
+          python -m pip install pyyaml
+          python scripts/check_plugin_manifest.py

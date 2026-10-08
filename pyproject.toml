@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-android-intelligence-hermes-gateway"
+version = "2.1.0"
+description = "Native Python Gateway Protocol v2 plugin for Hermes"
+requires-python = ">=3.12"
+dependencies = ["jsonschema>=4.23,<5"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["open_android_intelligence_gateway*"]
+namespaces = true

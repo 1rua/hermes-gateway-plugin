@@ -1,0 +1,37 @@
+manifest_version: 2
+name: open-android-intelligence-gateway
+label: Open Android Intelligence Gateway
+version: 2.1.0
+description: >-
+  Native Gateway Protocol v2.1 platform adapter that connects an Open Android
+  Intelligence phone to a Hermes Agent host: chat, notifications, SMS, device
+  requests and attachment transfer over one authenticated local channel.
+author: Open Android Intelligence
+kind: platform
+license: MIT
+homepage: https://github.com/1rua/hermes-gateway-plugin
+python_runtime: ">=3.12"
+requires_hermes: ">=0.20.0"
+# Registered by device_tools.register_device_tools: the typed device-request
+# tool, and the hook that acknowledges adopted messages after a tool call.
+provides_tools:
+  - open_android_device
+provides_hooks:
+  - post_tool_call
+requires_env: []
+optional_env:
+  # Where the Gateway listens. The host writes these to ~/.hermes/.env.
+  - OPEN_ANDROID_GATEWAY_HOST
+  - OPEN_ANDROID_GATEWAY_PORT
+  # An operator who already holds the Gateway Protocol contract points the
+  # plugin at it instead of letting the plugin fetch its pinned revision.
+  - OPEN_ANDROID_GATEWAY_CONTRACT_ROOT
+  - OPEN_ANDROID_GATEWAY_CONTRACT_REPOSITORY
+  # Overrides the 0600 master key file location when the host has no Secret
+  # Store (ADR 0023).
+  - OPEN_ANDROID_INTELLIGENCE_GATEWAY_MASTER_KEY_FILE
+tags:
+  - gateway
+  - android
+  - mobile
+  - platform

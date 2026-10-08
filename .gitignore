@@ -1,0 +1,17 @@
+# The Gateway Protocol contract is fetched at run time from the application
+# repository at the revision pinned in contract-pin.json. It is deliberately
+# never committed here: a second committed copy could drift from the one the
+# phone negotiates against, which is the exact failure the pin exists to stop.
+gateway-contract/
+.gateway-contract-staging/
+.gateway-contract-retired/
+.contract.lock
+
+# Python build and test artefacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
