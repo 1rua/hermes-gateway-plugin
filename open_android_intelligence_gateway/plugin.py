@@ -444,18 +444,7 @@ def register(ctx: Any) -> None:
                     interactive_setup(services.admin)
 
                 register_plat(
-                    name="open_android",
-                    label="Open Android Intelligence (Gateway v2)",
-                    adapter_factory=_build_adapter,
-                    check_fn=_check_deps,
-                    is_connected=_is_connected,
-                    validate_config=_is_connected,
-                    setup_fn=_setup_fn,
-                    install_hint=CONTRACT_SETUP_HINT,
-                    emoji="📱",
-                )
-                register_plat(
-                    name="open_android_intelligence",
+                    name="open-android-intelligence-gateway",
                     label="Open Android Intelligence Gateway",
                     adapter_factory=_build_adapter,
                     check_fn=_check_deps,
