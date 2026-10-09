@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
@@ -28,6 +29,7 @@ from .contract_assets import materialised_contract_root, resolve_contract_root
 from .core import PROTOCOL_VERSION, WIRE_PROTOCOL, GatewayCore, create_gateway_core
 from .http import EXPOSURE_MODES, GatewayExposure, create_gateway_exposure
 from .local_keys import resolve_local_master_key_store
+from .platform_identity import GATEWAY_PLATFORM_ID, GATEWAY_PLATFORM_IDS, gateway_enabled, listener_config
 
 
 # Surfaced by the host whenever the platform needs attention, so an
@@ -110,8 +112,8 @@ def _attr(value: Any, *names: str, default: Any = None) -> Any:
 
 
 class GatewayPlatform:
-    platform_id = "open-android-intelligence-gateway"
-    id = "open-android-intelligence-gateway"
+    platform_id = GATEWAY_PLATFORM_ID
+    id = GATEWAY_PLATFORM_ID
 
     def __init__(self, core: GatewayCore, exposure: GatewayExposure, admin: AdminService):
         self.core = core
@@ -419,32 +421,36 @@ def register(ctx: Any) -> None:
 
     register_plat = _attr(ctx, "register_platform", "registerPlatform", default=None)
     if callable(register_plat):
-        try:
-            import inspect
-            sig = inspect.signature(register_plat)
-            params = [p for p in sig.parameters.values() if p.name != "self"]
-            if len(params) == 1:
-                register_plat(gateway_platform)
-            else:
-                def _build_adapter(config: Any) -> Any:
-                    return OpenAndroidPlatformAdapter(config, services)
+        import inspect
+        sig = inspect.signature(register_plat)
+        params = [p for p in sig.parameters.values() if p.name != "self"]
+        if len(params) == 1:
+            register_plat(gateway_platform)
+        else:
+            shared_adapter: Any = None
+            adapter_lock = threading.Lock()
 
-                def _check_deps() -> bool:
-                    # This answers for the plugin's own wiring, not for the host's
-                    # mood: the platform needs its core and its exposure routes.
-                    return services.core is not None and services.exposure is not None
+            def _build_adapter(config: Any) -> Any:
+                # 旧名保留原始 Platform.value，以便读取历史会话键；三个入口
+                # 交给同一实例，宿主的授权与回送也能解析历史来源。
+                nonlocal shared_adapter
+                with adapter_lock:
+                    if shared_adapter is None:
+                        shared_adapter = OpenAndroidPlatformAdapter(listener_config(config), services)
+                    return shared_adapter
 
-                def _is_connected(config: Any) -> bool:
-                    # Outside the verified host API range every authenticated
-                    # request is answered with HOST_INCOMPATIBLE, so the platform
-                    # is not usable and must not report itself as connected.
-                    return _check_deps() and not services.admin.read_only
+            def _check_deps() -> bool:
+                return services.core is not None and services.exposure is not None
 
-                def _setup_fn() -> None:
-                    interactive_setup(services.admin)
+            def _is_connected(config: Any) -> bool:
+                return _check_deps() and not services.admin.read_only and gateway_enabled()
 
+            def _setup_fn() -> None:
+                interactive_setup(services.admin)
+
+            for platform_id in GATEWAY_PLATFORM_IDS:
                 register_plat(
-                    name="open-android-intelligence-gateway",
+                    name=platform_id,
                     label="Open Android Intelligence Gateway",
                     adapter_factory=_build_adapter,
                     check_fn=_check_deps,
@@ -454,11 +460,6 @@ def register(ctx: Any) -> None:
                     install_hint=CONTRACT_SETUP_HINT,
                     emoji="📱",
                 )
-        except Exception:
-            try:
-                register_plat(gateway_platform)
-            except Exception:
-                pass
 
     register_admin_fn = _attr(ctx, "register_admin", "registerAdmin", default=None)
     if callable(register_admin_fn):

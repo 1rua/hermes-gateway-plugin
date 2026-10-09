@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Set
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .local_keys import master_key_unavailable_reason
+from .platform_identity import GATEWAY_PLATFORM_ID, GATEWAY_PLATFORM_IDS
 from .core import (
     APPROVAL_CHOICES,
     APPROVAL_DEFAULT_TIMEOUT_SECONDS,
@@ -77,7 +78,7 @@ except ImportError:
         DOCUMENT = "document"
 
     class Source:  # type: ignore
-        def __init__(self, platform: Any = "open_android", chat_id: str = "", chat_name: str = "", chat_type: str = "dm", user_id: str = "", user_name: str = "", **kwargs: Any):
+        def __init__(self, platform: Any = GATEWAY_PLATFORM_ID, chat_id: str = "", chat_name: str = "", chat_type: str = "dm", user_id: str = "", user_name: str = "", **kwargs: Any):
             self.platform = platform
             self.chat_id = chat_id
             self.chat_name = chat_name
@@ -102,7 +103,7 @@ except ImportError:
         interactive_resume: bool = True
         splits_long_messages: bool = True
 
-        def __init__(self, config: Any, platform: Any = "open_android"):
+        def __init__(self, config: Any, platform: Any = GATEWAY_PLATFORM_ID):
             self.config = config
             self.platform = platform
             self._message_handler: Any = None
@@ -752,10 +753,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
     REQUIRES_EDIT_FINALIZE: bool = True
 
     def __init__(self, config: Any, services: Any):
-        try:
-            plat = Platform("open_android")
-        except Exception:
-            plat = getattr(Platform, "LOCAL", None) or Platform("open_android")
+        # 注册失败必须由宿主报告；LOCAL 不是这个 Gateway 的合法备用身份。
+        plat = Platform(GATEWAY_PLATFORM_ID)
         super().__init__(config, plat)
         self.services = services
         extra = getattr(config, "extra", {}) or {}
@@ -796,6 +795,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         # and the message id it was published under.
         self._turn_replies: Dict[str, tuple[str, str]] = {}
         self._generation_locks: Dict[tuple[str,str],asyncio.Lock] = {}
+        self._lifecycle_lock = asyncio.Lock()
+        self._conversation_platforms: Dict[tuple[str, str], str] = {}
 
     def set_session_store(self, session_store: Any) -> None:
         super().set_session_store(session_store)
@@ -840,6 +841,15 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
 
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
+        # 宿主可同时连接 canonical 与旧名入口，只有一个实例打开监听器。
+        async with self._lifecycle_lock:
+            if self._running and self._site is not None:
+                return True
+            if self._runner is not None:
+                await self._disconnect_once()
+            return await self._connect_once(is_reconnect=is_reconnect)
+
+    async def _connect_once(self, *, is_reconnect: bool = False) -> bool:
         """Start the Gateway Protocol v2 HTTP & SSE server."""
         # ADR 0023: a missing or unsafe master key source refuses startup. Serving
         # anyway would answer every authenticated request with 400 while login
@@ -921,6 +931,12 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             return False
 
     async def disconnect(self) -> None:
+        async with self._lifecycle_lock:
+            if not self._running and self._runner is None and self._loop is None:
+                return
+            await self._disconnect_once()
+
+    async def _disconnect_once(self) -> None:
         """Stop the Gateway Protocol v2 server."""
         self._running = False
         if self._maintenance_task is not None:
@@ -1593,19 +1609,98 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
 
         task.add_done_callback(_finished)
 
-    def _agent_source(self, conversation_id: str, account_id: str) -> Any:
+    def _agent_source(self, conversation_id: str, account_id: str, platform_id: str | None = None) -> Any:
         """The host source that names one Gateway conversation as one Agent chat.
 
         The Gateway conversation id *is* the chat id: the host keys its session
         from it, which is what makes two conversations two memories rather than
         one shared transcript.
         """
-        return self.build_source(
+        source = self.build_source(
             chat_id=conversation_id,
             chat_name="Android Client",
             chat_type="dm",
             user_id=account_id,
             user_name=account_id,
+        )
+        platform_id = platform_id or self._conversation_platforms.get((account_id, conversation_id), GATEWAY_PLATFORM_ID)
+        if platform_id != GATEWAY_PLATFORM_ID:
+            source.platform = Platform(platform_id)
+            # 使用宿主原生 profile 路由，保留 build_source 产生的接收实例引用。
+            runner = getattr(self, "gateway_runner", None)
+            if runner is not None:
+                from gateway.profile_routing import ProfileRouteRejected
+                owner = getattr(self, "_owner_profile", None)
+                try:
+                    source.profile = runner._profile_name_for_source(source, adapter_profile=owner) or owner
+                except ProfileRouteRejected:
+                    source.profile_route_rejected = True
+        return source
+
+    def _lookup_or_create_agent_session(
+        self, store: Any, conversation_id: str, account_id: str, force_new: bool,
+    ) -> Any:
+        """读取已绑定的历史来源，禁止平台更名偷偷创建另一段 Agent 记忆。"""
+        lookup = getattr(store, "lookup_by_session_key", None)
+        if not callable(lookup):
+            return store.get_or_create_session(self._agent_source(conversation_id, account_id), force_new)
+
+        account = self.services.core.open_gateway_account(account_id)
+        try:
+            binding = account.agent_sessions.lookup(conversation_id)
+        finally:
+            account.close()
+
+        bound_id = (binding or {}).get("agentSessionId")
+        bound_key = (binding or {}).get("sessionKey")
+        if bound_id:
+            # 只认领账号自己的精确绑定。LOCAL 或未知来源保留可读，但需
+            # 操作员核实，不能把其它本地历史冒充成手机会话。
+            entry = lookup(bound_key) if bound_key else None
+            self._remember_agent_source(store, entry, conversation_id, account_id, bound_id, bound_key)
+            return entry
+
+        candidates = []
+        for platform_id in GATEWAY_PLATFORM_IDS:
+            source = self._agent_source(conversation_id, account_id, platform_id)
+            key = self._host_session_key(store, source)
+            entry = lookup(key)
+            if entry is not None:
+                candidates.append(entry)
+        if len(candidates) > 1:
+            raise GatewayError("HOST_INCOMPATIBLE", {"reason": "AMBIGUOUS_AGENT_SESSION"})
+        if candidates:
+            self._remember_agent_source(store, candidates[0], conversation_id, account_id)
+            return candidates[0]
+        return store.get_or_create_session(self._agent_source(conversation_id, account_id), force_new)
+
+    def _remember_agent_source(
+        self, store: Any, entry: Any, conversation_id: str, account_id: str,
+        bound_id: str | None = None, bound_key: str | None = None,
+    ) -> None:
+        origin = getattr(entry, "origin", None)
+        platform_id = getattr(getattr(origin, "platform", None), "value", None)
+        if (
+            entry is None or origin is None or platform_id not in GATEWAY_PLATFORM_IDS
+            or origin.chat_id != conversation_id or origin.user_id != account_id
+            or (bound_id is not None and entry.session_id != bound_id)
+            or (bound_key is not None and entry.session_key != bound_key)
+        ):
+            raise GatewayError("HOST_INCOMPATIBLE", {"reason": "UNRESOLVED_AGENT_SESSION_BINDING"})
+        source = self._agent_source(conversation_id, account_id, platform_id)
+        if self._host_session_key(store, source) != entry.session_key:
+            raise GatewayError("HOST_INCOMPATIBLE", {"reason": "AGENT_SESSION_KEY_MISMATCH"})
+        self._conversation_platforms[(account_id, conversation_id)] = platform_id
+
+    @staticmethod
+    def _host_session_key(store: Any, source: Any) -> str:
+        from gateway.session import build_session_key
+        resolver = getattr(store, "_resolve_profile_for_key", None)
+        return build_session_key(
+            source,
+            group_sessions_per_user=getattr(store.config, "group_sessions_per_user", True),
+            thread_sessions_per_user=getattr(store.config, "thread_sessions_per_user", False),
+            profile=resolver(source) if callable(resolver) else None,
         )
 
     def _schedule_agent_session(
@@ -1624,9 +1719,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             task = asyncio.ensure_future(self._ensure_agent_session(
                 conversation_id, account_id, force_new=force_new, created_via=created_via,
             ))
-            # Held until done: a task nobody references can be collected mid-flight.
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            # 保持任务存活并观察兼容拒绝，避免产生未处理的任务异常。
+            self._track_background_task(task, "agent-session-binding")
 
         loop = self._loop
         if loop is None or loop.is_closed():
@@ -1661,11 +1755,14 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
         if store is not None:
             try:
                 entry = await asyncio.to_thread(
-                    store.get_or_create_session, self._agent_source(conversation_id, account_id), force_new,
+                    self._lookup_or_create_agent_session, store, conversation_id, account_id, force_new,
                 )
+            except GatewayError as exc:
+                logger.warning("Agent 会话兼容失败 code=%s reason=%s", exc.code, exc.details.get("reason"))
+                raise
             except Exception as exc:
                 logger.warning(
-                    "[open_android] Agent session lookup failed for %s: %s", conversation_id, exc
+                    "Agent 会话查询失败 stage=agent-session-lookup type=%s", type(exc).__name__
                 )
                 entry = None
         # The binding write touches SQLite, so it is offloaded like the lookup: a
