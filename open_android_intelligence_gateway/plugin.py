@@ -25,7 +25,12 @@ from .adapter import (
     create_gateway_request_verifier,
 )
 from .account_paths import GATEWAY_DIRECTORY_NAME, WIRE_ID_PATTERN
-from .contract_assets import materialised_contract_root, resolve_contract_root
+from .contract_assets import (
+    CONTRACT_ROOT_ENV,
+    ContractResolution,
+    materialised_contract_root,
+    resolve_contract_root,
+)
 from .core import PROTOCOL_VERSION, WIRE_PROTOCOL, GatewayCore, create_gateway_core
 from .http import EXPOSURE_MODES, GatewayExposure, create_gateway_exposure
 from .local_keys import resolve_local_master_key_store
@@ -212,6 +217,25 @@ def _resolve_contract_root() -> Path | None:
     return resolution.root
 
 
+def ensure_contract_ready(core: Any = None, root_dir: Path | None = None) -> ContractResolution:
+    """Ensure that the pinned Gateway Protocol contract is materialised on disk.
+
+    If not yet materialised, attempts an automatic checkout according to contract-pin.json.
+    Updates core.contract_root and invalidates core._contracts when successful.
+    """
+    root = root_dir if root_dir is not None else plugin_root()
+    resolution = materialised_contract_root(root)
+    if resolution.root is None:
+        resolution = resolve_contract_root(root, force=False)
+    if resolution.root is not None and core is not None:
+        current_root = getattr(core, "contract_root", None)
+        if current_root is None or current_root != resolution.root:
+            setattr(core, "contract_root", resolution.root)
+            if hasattr(core, "_contracts"):
+                setattr(core, "_contracts", None)
+    return resolution
+
+
 def _storage_root(ctx: Any) -> Path | None:
     """The host data directory composed with the Gateway directory name.
 
@@ -332,6 +356,20 @@ def interactive_setup(
         print("  请先确保宿主环境满足 API 版本兼容要求后再试。\n")
         return False
 
+    core = getattr(admin, "core", None)
+    resolution = materialised_contract_root(plugin_root())
+    if resolution.root is None:
+        print("  ⏳ 检测到协议契约尚未就绪，正在自动同步对应版本的契约代码...")
+        resolution = ensure_contract_ready(core)
+        if resolution.root is None:
+            print(f"  ❌ 协议契约自动拉取失败：{resolution.reason}")
+            print(f"  请检查网络连通性；离线部署可用环境变量 {CONTRACT_ROOT_ENV} 指向已就位的契约根目录。\n")
+            return False
+        ref_text = f"（锁定提交: {resolution.pinned_ref[:8]}）" if resolution.pinned_ref else ""
+        print(f"  ✅ 协议契约同步成功 {ref_text}\n")
+    else:
+        ensure_contract_ready(core)
+
     is_interactive = is_tty if is_tty is not None else sys.stdin.isatty()
     if not is_interactive:
         print("  当前运行在非交互式终端中，跳过交互输入。")
@@ -436,6 +474,7 @@ def register(ctx: Any) -> None:
                 nonlocal shared_adapter
                 with adapter_lock:
                     if shared_adapter is None:
+                        ensure_contract_ready(services.core)
                         shared_adapter = OpenAndroidPlatformAdapter(listener_config(config), services)
                     return shared_adapter
 
@@ -556,6 +595,10 @@ def register(ctx: Any) -> None:
                           "hermes open-android-intelligence account create --username <用户名> "
                           "--password <密码> --confirm-local")
                     return
+                resolution = ensure_contract_ready(services.core)
+                if resolution.root is None:
+                    print(f"❌ 协议契约未就绪：{resolution.reason}")
+                    return
                 # Every account write goes through the one management service, so
                 # the read-only gate and the local confirmation are enforced in
                 # exactly one place for both the CLI and the host panel.
@@ -636,5 +679,6 @@ HERMES_PLUGIN = {
 __all__ = [
     "AdminSurface", "GatewayPlatform", "GatewayRequestVerifier", "GatewayServices",
     "HermesPluginContext", "HERMES_PLUGIN", "HERMES_PLUGIN_MANIFEST",
-    "compose_gateway_services", "create_gateway_request_verifier", "interactive_setup", "register",
+    "compose_gateway_services", "create_gateway_request_verifier", "ensure_contract_ready",
+    "interactive_setup", "register",
 ]

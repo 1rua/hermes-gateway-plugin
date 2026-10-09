@@ -10,17 +10,14 @@ Hermes Agent 宿主，通过一条经过认证的本地通道承载对话、通�
 hermes plugins install 1rua/hermes-gateway-plugin --enable
 ```
 
-安装完成后，插件注册平台、管理入口、HTTP 路由与原生命令。首次使用前先获取协议契约
-（见下文「协议契约」，需要联网且耗时约半分钟）：
+安装完成后，插件注册平台、管理入口、HTTP 路由与原生命令。初次配置时直接运行向导即可，向导会自动拉取对应锁定的协议契约：
 
 ```bash
-hermes open-android-intelligence contract sync
-hermes gateway setup          # 向导式创建手机连接账号
+hermes gateway setup          # 自动同步契约并向导式创建手机连接账号
 hermes open-android-intelligence status
 ```
 
-插件**加载时不会联网**：宿主启动只检查契约是否已在本地，不会替你下载，因此首次安装后
-需要显式执行一次 `contract sync`。
+日常宿主启动时**不执行网络请求**，仅当本地契约未就绪时由 `setup` 向导或账号创建命令自动按版本拉取；也可随时通过 `hermes open-android-intelligence contract sync` 手工同步或更新契约。
 
 ## 更新
 
