@@ -188,8 +188,16 @@ def test_interactive_setup_auto_syncs_contract_when_missing(tmp_path, monkeypatc
     import subprocess
     from open_android_intelligence_gateway import plugin as plugin_module
 
-    # Create a local git repository holding genuine contract files
-    real_contract = Path(__file__).resolve().parents[1] / "gateway-contract"
+    import os
+    env_contract = os.environ.get("OPEN_ANDROID_GATEWAY_CONTRACT_ROOT")
+    local_contract = Path(__file__).resolve().parents[1] / "gateway-contract"
+    if env_contract and Path(env_contract).is_dir():
+        real_contract = Path(env_contract)
+    elif local_contract.is_dir():
+        real_contract = local_contract
+    else:
+        pytest.skip("No available contract directory found to create mock git repository")
+
     source = tmp_path / "contract-source"
     shutil.copytree(real_contract, source / "gateway-contract")
 
