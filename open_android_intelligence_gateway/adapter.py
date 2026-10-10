@@ -698,14 +698,10 @@ def _header_value(headers: Mapping[str, Any], name: str) -> Optional[str]:
 
 
 def _conversation_id_of(path: str) -> Optional[str]:
-    """The conversation a route reads or writes, if any.
+    """提取会话本身、时间线或消息提交路径所属的会话。
 
-    Opening a conversation and reading its timeline are the same act for this
-    contract: the phone switches by reading, so both `…/conversations/{id}` and
-    `…/conversations/{id}/messages` name the conversation the user moved to.
-    Sub-resources that are about something else (`generations`, `attachments`)
-    name nothing here, because treating them as an opened conversation would bind
-    sessions nobody opened.
+    批次与普通消息使用同一条宿主投递链路；生成和附件子资源仍不表示
+    用户打开了会话，避免为未打开的资源创建宿主会话绑定。
     """
     parts = [part for part in path.split("/") if part]
     if "conversations" not in parts:
@@ -714,7 +710,7 @@ def _conversation_id_of(path: str) -> Optional[str]:
     if index >= len(parts):
         return None
     tail = parts[index + 1:]
-    if tail and tail != ["messages"]:
+    if tail and tail not in (["messages"], ["message-batches"]):
         return None
     return parts[index]
 
@@ -2089,8 +2085,8 @@ class OpenAndroidPlatformAdapter(BasePlatformAdapter):
             except OSError as exc:
                 logger.warning("[open_android] Cached media cleanup failed errorCode=INTERNAL_ERROR")
 
-    def on_processing_complete(self, event: Any, outcome: Any) -> None:
-        """Complete the durable Gateway outbox after the Agent turn ends."""
+    async def on_processing_complete(self, event: Any, outcome: Any) -> None:
+        """按宿主异步完成回调契约结算 Gateway 投递状态。"""
         source = getattr(event, "source", None)
         account_id = str(getattr(source, "user_id", "") or "")
         client_message_id = str(getattr(event, "message_id", "") or "")

@@ -145,7 +145,7 @@ def test_unknown_mime_attachment_is_a_document_media_event(tmp_path):
     assert len(event.media_urls) == 1
     media_path = Path(event.media_urls[0])
     assert media_path.read_bytes() == content
-    adapter.on_processing_complete(event, "success")
+    asyncio.run(adapter.on_processing_complete(event, "success"))
     assert not media_path.exists()
 
 
@@ -207,7 +207,7 @@ def test_concurrent_idempotent_inbound_replay_claims_message_once(tmp_path):
         assert [event["payload"]["status"] for event in events] == ["queued", "delivered"]
     finally:
         account.close()
-    adapter.on_processing_complete(captured[0], "success")
+    asyncio.run(adapter.on_processing_complete(captured[0], "success"))
 
 
 def test_expired_dispatch_lease_cannot_be_completed_by_a_stale_owner(tmp_path):

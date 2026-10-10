@@ -5439,15 +5439,15 @@ class GatewayCore:
                             raise GatewayError("SCHEMA_INVALID")
                         title = str(body_map.get("title", ""))
                         conv_id = conversation_get.group(1)
-                        now = _request_now(request)
+                        rename_now = _request_now(request)
                         updated = account.conversations.update_title(
-                            conv_id, title, context["correlationId"], now,
+                            conv_id, title, context["correlationId"], rename_now,
                         )
                         account.events.append(
                             "conversation.title.updated",
                             context["correlationId"],
                             {"conversationId": conv_id, "title": title, "newTitle": title},
-                            now,
+                            rename_now,
                         )
                         return _success(context, {"conversation": updated})
                     if method == "POST" and target_path == "/open-android-intelligence/v2/attachments":

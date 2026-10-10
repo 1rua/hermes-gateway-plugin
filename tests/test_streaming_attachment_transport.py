@@ -283,7 +283,7 @@ def test_raw_put_streams_50_mib_image_through_verified_hermes_media_and_rejects_
                 assert [event["payload"]["revision"] for event in dispatch_events] == [0, 1]
             finally:
                 account.close()
-            adapter.on_processing_complete(event, "success")
+            await adapter.on_processing_complete(event, "success")
             assert not media_path.exists()
             account = core.open_gateway_account(ACCOUNT_ID)
             try:
